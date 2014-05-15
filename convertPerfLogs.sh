@@ -4,144 +4,148 @@ NBLIGNES=`cat $1 | wc -l`
 echo "$NBLIGNES lines"
 COUNT=0
 
-#TMPFILE=$1.tmp
 JSONFILE=$1.json
 SORTEDFILE=$1.sorted
-#rm -vf $TMPFILE
-rm -vf $JSONFILE
-rm -vf $SORTEDFILE
+DEBUGFILE=$1.debug
+rm -vf ${JSONFILE}
+rm -vf ${SORTEDFILE}
+rm -vf ${DEBUGFILE}
 
-echo -n '{"name":"perfs","children":[' >> $JSONFILE
+function json {
+    echo $* >> $JSONFILE
+	debug "JSON : " $*
+}
 
-#echo -n '{"name":"analytics", "children": [' >> $JSONFILE
+function debug {
+    echo $* >> $DEBUGFILE
+}
 
+function sorted {
+    echo $* >> $SORTEDFILE
+}
+
+function isChild {
+	RESULT=false
+    L=LOGIN$1
+    debug "$L : ${!L}"
+    T=THREAD$1
+    debug "$T : ${!T}"
+    END=END$1
+    debug "END : ${!END} < $START ?"
+    if [[ "${!L}" == "$LOGIN" ]] && [[ "${!T}" == "$THREAD" ]] && [[ ${!END} -ge $START ]]
+    then
+        RESULT=true
+    fi
+
+    #cas root
+	if [[ $1 -eq 0 ]] || [[ "${!L}" == "perfs" ]]
+	then
+		RESULT=true
+	fi
+
+	debug "Child of $1 ? : $RESULT"
+	echo $RESULT
+}
+
+function isFirstChild {
+    RESULT=true
+	FIRSTCHILD=FIRSTCHILD$1
+	debug "$FIRSTCHILD : ${!FIRSTCHILD}"
+	if [ "false" == "${!FIRSTCHILD}" ]
+	then
+	    RESULT=false
+	fi
+	echo $RESULT
+	debug "1st child of $1 ? : $RESULT"
+}
+
+function majVar {
+    eval $1=$2
+	debug "$1 -> ${!1}"
+}
+
+function getVar {
+    echo ${!1}
+}
+
+function tree {
+    if [[ "$(isChild $LEVEL)" == "true" ]]
+  then
+	if [[ "$(isFirstChild $LEVEL)" == "true" ]]
+	then
+		json ",\"children\":["
+		majVar FIRSTCHILD$LEVEL false
+	else
+		json ","
+	fi
+	majVar LEVEL $((LEVEL + 1))
+  else
+    if [[ "$(isFirstChild $LEVEL)" == "true" ]]
+	then
+		json '}'
+	else
+		json ']}'
+		majVar FIRSTCHILD$LEVEL true
+	fi
+	if [[ "$(isChild $((LEVEL - 1)))" == "true" ]]
+	then
+		json ','
+	else
+		majVar LEVEL $((LEVEL - 1))
+		tree
+	fi
+  fi
+}
+
+#init
 LEVEL=0
-declare FIRSTCHILD_LEVEL$LEVEL=true
-declare FIRSTPARENT_LEVEL$LEVEL=true
-LASTTAG=""
-CURRENTLOGIN=""
-CURRENTTHREAD=""
 
-function checkNewLevel {
-    if [[ $TAG == *_jsp\)* ]] || [[ $TAG == *Action.handleRequest* ]]
-    then
-        echo true
-    fi
-}
+#root
+majVar LEVEL $((LEVEL + 1))
+majVar FIRSTCHILD$LEVEL true
+majVar LOGIN$LEVEL "perfs"
+majVar THREAD$LEVEL "perfs"
+majVar END$LEVEL 999999999999999999
 
-function checkSameLevel {
-    if [[ $LASTTAG == *BannerFRH_jsp* ]] && [[ $TAG == *BreadcrumbFRH_jsp* ]] || \
-        [[ $TAG == *HeaderNav*_jsp* ]]
-    then
-        echo true
-    fi
-}
+json '{"name":"perfs"'
 
-
-#transfo en CSV
+#transfo to CSV + sort by LOGIN then THREAD then START
 cat $1 | sed 's/,/#/;s/log\[\(.*\)\] node\[\(.*\)\] thread\[\(.*\)\] login\[\(.*\)\] start\[\(.*\)\] time\[\(.*\)\] tag\[\(.*\)\]/\1,\2,\3,\4,\5,\6,\7/' | \
 sort -t ',' -k 4,4 -k 3,3 -k 5,5 | \
 {
 while IFS=',' read LOG NODE THREAD LOGIN START TIME TAG MSG
 do
-  echo "$LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG" >> $SORTEDFILE
-  #echo $LEVEL
+    sorted "$LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
+	debug ""
+    debug "$LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
+    debug "LEVEL : $LEVEL"
 
-    if [[ "$CURRENTLOGIN" != "$LOGIN" ]] || [[ "$CURRENTTHREAD" != "$THREAD" ]]
-    then
-        while [ $LEVEL -ne 0 ]
-        do
-            echo -n "]}" >> $JSONFILE
-            LEVEL=$(($LEVEL - 1))
-        done
-        #echo -n "," >> $JSONFILE
-        LASTTAG=""
-    fi
-
-    CURRENTLOGIN=$LOGIN
-    CURRENTTHREAD=$THREAD
-
-    NEWLEVEL=$(checkNewLevel $TAG)
-
-  #check debut d'un nouveau groupe de log de + plus haut niveau
-  if [[ $TAG == *AccessFilter.doFilter* ]]
-  then
-    #check si premier parent des enfants pour rajouter ou non ']},'
-    FIRSTPARENT=FIRSTPARENT_LEVEL$LEVEL
-    if [ "${!FIRSTPARENT}" == "true" ]
-    then
-        declare FIRSTPARENT_LEVEL$LEVEL=false
-        FIRSTCHILD=FIRSTCHILD_LEVEL$LEVEL
-        if [ "${!FIRSTCHILD}" == "true" ]
-        then
-            declare FIRSTCHILD_LEVEL$LEVEL=false
-        else
-            echo -n "," >> $JSONFILE
-        fi
-    else
-        while [ $LEVEL -ne 0 ]
-        do
-            echo -n "]}" >> $JSONFILE
-            LEVEL=$(($LEVEL - 1))
-        done
-        echo -n "," >> $JSONFILE
-        LASTTAG=""
-    fi
-
-    LEVEL=$(($LEVEL + 1))
-    declare FIRSTCHILD_LEVEL$LEVEL=true
-    echo -n "{\"name\":\"$TAG\",\"size\":\"$TIME\",\"login\":\"$LOGIN\",\"children\":[" >> $JSONFILE
-  elif [ "$NEWLEVEL" == "true" ]
-  then
-    #check si le nouveau TAG et l'ancien ne sont pas de meme niveau
-    SAMELEVEL=$(checkSameLevel $LASTTAG $TAG)
-    if [ "$SAMELEVEL" == "true" ]
-    then
-        LEVEL=$(($LEVEL - 1))
-        echo -n "]}" >> $JSONFILE
-    fi
-
-    LASTTAG=$TAG
-
-    #groupes secondaires
-    FIRSTCHILD=FIRSTCHILD_LEVEL$LEVEL
-    if [ "${!FIRSTCHILD}" == "true" ]
-    then
-        declare FIRSTCHILD_LEVEL$LEVEL=false
-    else
-        echo -n "," >> $JSONFILE
-    fi
-    LEVEL=$(($LEVEL + 1))
-    declare FIRSTCHILD_LEVEL$LEVEL=true
-    echo -n "{\"name\":\"$TAG\",\"size\":\"$TIME\",\"login\":\"$LOGIN\",\"children\":[" >> $JSONFILE
-
-  else
-    FIRSTCHILD=FIRSTCHILD_LEVEL$LEVEL
-    if [ "${!FIRSTCHILD}" == "true" ]
-    then
-        declare FIRSTCHILD_LEVEL$LEVEL=false
-    else
-        echo -n "," >> $JSONFILE
-    fi
-    echo -n "{\"name\":\"$TAG\",\"size\":\"$TIME\",\"login\":\"$LOGIN\"}" >> $JSONFILE
-  fi
+  tree
   
-  #echo "{ log:\"$LOG\", node:\"$NODE\", thread:\"$THREAD\", login:\"$LOGIN\", start:\"$START\", time:\"$TIME\", tag:\"$TAG\" }" >> $JSONFILE
+  json "{\"name\":\"$TAG\",\"size\":\"$TIME\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\""
   
-  #echo -ne "$(($COUNT * 100 / $NBLIGNES)) %\r"
+  majVar LOGIN$LEVEL $LOGIN
+  majVar THREAD$LEVEL $THREAD
+  majVar END$LEVEL $(($START + $TIME))
+
+  #count
   COUNT=$(($COUNT + 1))
   printf "%3d %%\r" $(($COUNT * 100 / $NBLIGNES))
 
 done
 
-while [ $LEVEL -ne 0 ]
+#close last log
+json '}'
+
+#close all
+while [ $LEVEL -ne 1 ]
 do
-    echo -n "]}" >> $JSONFILE
+    json "]}"
     LEVEL=$(($LEVEL - 1))
 done
 }
 
-echo -n "]}" >> $JSONFILE
+#json "]}"
 
 echo
-#echo DONE
+echo DONE
