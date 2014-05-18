@@ -4,9 +4,11 @@ NBLIGNES=`cat $1 | wc -l`
 echo "$NBLIGNES lines"
 COUNT=0
 
-JSONFILE=$1.json
-SORTEDFILE=$1.sorted
-DEBUGFILE=$1.debug
+#FILENAME=$1
+FILENAME=perfs
+JSONFILE=$FILENAME.json
+SORTEDFILE=$FILENAME.sorted
+DEBUGFILE=$FILENAME.debug
 rm -vf ${JSONFILE}
 rm -vf ${SORTEDFILE}
 rm -vf ${DEBUGFILE}
@@ -32,7 +34,7 @@ function isChild {
     debug "$T : ${!T}"
     END=END$1
     debug "END : ${!END} < $START ?"
-    if [[ "${!L}" == "$LOGIN" ]] && [[ "${!T}" == "$THREAD" ]] && [[ ${!END} -ge $START ]]
+    if [[ "${!L}" == "$LOGIN" ]] && [[ "${!T}" == "$THREAD" ]] && [[ ${!END} -ge $((START + TIME)) ]] #&& [[ $START -ne $(getVar START$LEVEL) ]]
     then
         RESULT=true
     fi
@@ -75,6 +77,9 @@ function tree {
 	then
 		json ",\"children\":["
 		majVar FIRSTCHILD$LEVEL false
+
+		#init rest of time
+		majVar REST$LEVEL $(getVar TIME$LEVEL)
 	else
 		json ","
 	fi
@@ -84,6 +89,15 @@ function tree {
 	then
 		json '}'
 	else
+	    #add 'unknown' node
+	    UNKNOWN=$(getVar REST$LEVEL)
+	    if [ $UNKNOWN -ge 0 ]
+	    then
+	        json ",{\"name\":\"unknown\",\"size\":\"$UNKNOWN\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\"}"
+	    else
+	        debug "UNKNOWN < 0 : $LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
+	        json ",{\"name\":\"unknown\",\"size\":\"0\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\"}"
+	    fi
 		json ']}'
 		majVar FIRSTCHILD$LEVEL true
 	fi
@@ -122,11 +136,17 @@ do
 
   tree
   
-  json "{\"name\":\"$TAG\",\"size\":\"$TIME\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\""
+  json "{\"name\":\"$TAG\",\"size\":\"$TIME\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$START\",\"time\":\"$TIME\""
   
   majVar LOGIN$LEVEL $LOGIN
   majVar THREAD$LEVEL $THREAD
+  majVar TIME$LEVEL $TIME
+  majVar START$LEVEL $START
   majVar END$LEVEL $(($START + $TIME))
+
+  #maj rest of time
+  REST=$(getVar REST$((LEVEL - 1)))
+  majVar REST$((LEVEL - 1)) $(($REST - $TIME))
 
   #count
   COUNT=$(($COUNT + 1))
