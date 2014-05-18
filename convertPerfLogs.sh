@@ -169,3 +169,33 @@ done
 
 echo
 echo DONE
+
+#server
+if [[ "`command -v nc`" != "" ]]
+then
+
+    RESP=/tmp/webresp
+    [ -p $RESP ] || mkfifo $RESP
+
+    while true ; do
+        ( cat $RESP ) | nc -l 9000 | (
+        REQ=`while read L && [ " " "<" "$L" ] ; do echo "$L" ; done`
+        URL=${REQ#GET /}
+        URL=${URL% HTTP/*}
+        echo "[`date '+%Y-%m-%d %H:%M:%S'`] $REQ" | head -1
+        [ "$URL" == "perfs.html" ] && BODY=`cat perfs.html`
+        [ "$URL" == "perfs.json" ] && BODY=`cat perfs.json`
+        cat >$RESP <<EOF
+        HTTP/1.0 200 OK
+        Cache-Control: private
+        Content-Type: text/html
+        Server: bash/2.0
+        Connection: Close
+        Content-Length: ${#BODY}
+
+        $BODY
+        EOF
+        )
+    done
+
+fi
