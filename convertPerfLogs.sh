@@ -29,11 +29,11 @@ function sorted {
 function isChild {
 	RESULT=false
     L=LOGIN$1
-    debug "$L : ${!L}"
+    debug "${!L} == $LOGIN"
     T=THREAD$1
-    debug "$T : ${!T}"
+    debug "${!T} == $THREAD"
     END=END$1
-    debug "END : ${!END} < $START ?"
+    debug "END : ${!END} >= $((START + TIME)) ?"
     if [[ "${!L}" == "$LOGIN" ]] && [[ "${!T}" == "$THREAD" ]] && [[ ${!END} -ge $((START + TIME)) ]] #&& [[ $START -ne $(getVar START$LEVEL) ]]
     then
         RESULT=true
@@ -129,6 +129,12 @@ sort -t ',' -k 4,4 -k 3,3 -k 5,5 | \
 {
 while IFS=',' read LOG NODE THREAD LOGIN START TIME TAG MSG
 do
+    
+    THREAD=${THREAD// /}
+    THREAD=${THREAD//\'/}
+    THREAD=${THREAD//(/}
+    THREAD=${THREAD//)/}
+    
     sorted "$LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
 	debug ""
     debug "$LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
