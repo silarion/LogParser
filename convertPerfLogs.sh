@@ -124,7 +124,7 @@ majVar END$LEVEL 999999999999999999
 json '{"name":"perfs"'
 
 #transfo to CSV + sort by LOGIN then THREAD then START
-cat $1 | sed 's/,/#/;s/log\[\(.*\)\] node\[\(.*\)\] thread\[\(.*\)\] login\[\(.*\)\] start\[\(.*\)\] time\[\(.*\)\] tag\[\(.*\)\]/\1,\2,\3,\4,\5,\6,\7/' | \
+cat $1 | sed 's/,/#/g;s/log\[\(.*\)\] node\[\(.*\)\] thread\[\(.*\)\] login\[\(.*\)\] start\[\(.*\)\] time\[\(.*\)\] tag\[\(.*\)\]/\1,\2,\3,\4,\5,\6,\7/' | \
 sort -t ',' -k 4,4 -k 3,3 -k 5,5 | \
 {
 while IFS=',' read LOG NODE THREAD LOGIN START TIME TAG MSG
