@@ -1,169 +1,264 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
-<title>perfs</title>
+<title>perfs
+</title>
 <style>
-
     circle {
         fill: rgb(31, 119, 180);
         fill-opacity: .15;
         stroke: rgb(31, 119, 180);
         stroke-width: 1px;
     }
-
     .leaf circle {
         fill: #ff7f0e;
         fill-opacity: 1;
     }
-
     text {
         font: 10px sans-serif;
     }
-
+    /*partition*/
+    .chart {
+        display: block;
+        margin: auto;
+        margin-top: 60px;
+        font-size: 11px;
+    }
+    rect {
+        stroke: #eee;
+        fill: #aaa;
+        fill-opacity: .8;
+    }
+    rect.parent {
+        cursor: pointer;
+        fill: steelblue;
+    }
+    text {
+        pointer-events: none;
+    }
 </style>
+
 <body>
-<script src="http://d3js.org/d3.v3.js"></script>
-<script type="text/javascript">
+    <script src="http://d3js.org/d3.v3.js"></script>
+    <script type="text/javascript">
+        //var myjson = "http://devbourse.luxbourse.local/bourse/tests/perfs.log.json";
+        var myjson = "perfs.json";
 
-    //var myjson = "http://devbourse.luxbourse.local/bourse/tests/perfs.log.json";
-    var myjson = "perfs.json";
+        function partition() {
 
-    var diameter = 300,
-            format = d3.format(",d");
+            var w = 1120,
+                h = 600,
+                x = d3.scale.linear().range([0, w]),
+                y = d3.scale.linear().range([0, h]);
+                
+            d3.json("perfs.json", function (root) {
+            
+                for (var index in root.children) {
 
-    var pack = d3.layout.pack()
-            .size([diameter - 4, diameter - 4])
-            .value(function (d) {
-                return d.size;
-            })
-            .sort(function comparator(a, b) {
-                return d3.descending(a.value, b.value);
+                    var partition = d3.layout.partition()
+                        .value(function (d) {
+                            return d.size;
+                        })
+                        .sort(function (d) {
+                            return -d.start;
+                        });
+                
+                    //separate each graph
+                    d3.select("body").append("br")
+                        .attr("clear", "both");
+                        
+                    var child = root.children[index];
+                    
+                    var div = d3.select("body").append("div")
+                        .attr("class", "chart")
+                        .style("width", w + "px")
+                        .style("height", h + "px");
+                    var vis = div
+                        .append("svg:svg")
+                        .attr("width", w)
+                        .attr("height", h);
+                        
+   
+                    var g = vis.selectAll("g")
+                        .data(partition.nodes(child))
+                        .enter().append("svg:g")
+                        .attr("transform", function (d) {
+                            return "translate(" + x(d.y) + "," + y(d.x) + ")";
+                        })
+                        .on("click", click);
+                    
+                    
+                    
+                    var kx = w / child.dx, ky = h / 1;
+                        
+                    g.append("svg:rect")
+                        .attr("width", child.dy * kx)
+                        .attr("height", function (d) {
+                            return d.dx * ky;
+                        })
+                        .attr("class", function (d) {
+                            return d.children ? "parent" : "child";
+                        });
+                    g.append("svg:text")
+                        .attr("transform", transform)
+                        .attr("dy", ".35em")
+                        .style("opacity", function (d) {
+                            return d.dx * ky > 12 ? 1 : 0;
+                        })
+                        .text(function (d) {
+                            return d.name + ':' + d.size;
+                        })
+                        
+                    /*d3.select(child).on("click", function () {
+                            click(child);
+                        })*/
+                        
+                    function click(d) {
+                      if (!d.children) return;
+                  
+                      kx = (d.y ? w - 40 : w) / (1 - d.y);
+                      ky = h / d.dx;
+                      x.domain([d.y, 1]).range([d.y ? 40 : 0, w]);
+                      y.domain([d.x, d.x + d.dx]);
+                  
+                      var t = d3.select(this).transition()
+                          .duration(d3.event.altKey ? 7500 : 750)
+                          .attr("transform", function(d) { 
+                            return "translate(" + x(d.y) + "," + y(d.x) + ")"; 
+                          });
+                  
+                      t.select("rect")
+                          .attr("width", d.dy * kx)
+                          .attr("height", function(d) { 
+                            return d.dx * ky; 
+                          });
+                  
+                      t.select("text")
+                          .attr("transform", transform)
+                          .style("opacity", function(d) { 
+                            return d.dx * ky > 12 ? 1 : 0; 
+                          });
+                  
+                      d3.event.stopPropagation();
+                      
+                      /*d3.select(window)
+                        .on("click", function() { click(d); })*/
+                        
+                    }
+                  
+                    function transform(d) {
+                      return "translate(8," + d.dx * ky / 2 + ")";
+                    }
+
+                }
+
             });
-
-    var i = 0;
-    var json;
-
-    d3.json(myjson, function (error, root) {
-
-        var array = [];
-        array[0] = root.children[1];
-        array[1] = root.children[0];
-        //array[2] = root.children[2];
-
-        //root.children = array;
-
-
-        json = root;
-
-        for (var index in root.children) {
-
-            //separate each graph
-            d3.select("body").append("br")
-                    .attr("clear", "both");
-
-            //div
-            var div = d3.select("body").append("div")
-                    .attr("height", diameter);
-
-            //svg
-            var svg = div.append("svg")
-                    .attr("width", diameter)
-                    .attr("height", diameter)
-                    .attr("style", "display:inline-block;vertical-align:middle")
-                    .append("g")
-                    .attr("transform", "translate(2,2)");
-
-            var child = root.children[index];
-            //var child = root;
-
-            var node = svg.datum(child).selectAll(".node")
-                    .data(pack.nodes)
-                    .enter().append("g")
-                    .attr("class", function (d) {
-                        return d.children ? "node" : "leaf node";
-                    })
-                    .attr("transform", function (d) {
-                        return "translate(" + d.x + "," + d.y + ")";
-                    });
-
-            node.append("title")
-                    .text(function (d) {
-                        //return d.name + (d.children ? "" : ": " + format(d.size));
-                        return d.name + ": " + format(d.size);
-                    });
-
-            node.append("circle")
-                    .attr("r", function (d) {
-                        return d.r;
-                    });
-
-            node.filter(function (d) {
-                return !d.children;
-            }).append("text")
-                    .attr("dy", ".3em")
-                    .style("text-anchor", "middle")
-                    .text(function (d) {
-                        return d.size.substring(0, d.r / 3);
-                    });
-            //.text(function(d) { return d.name.substring(0, d.r / 3); });
-
-            try {
-                div.append("div")
-                        .attr("style", "display:inline-block;width:50%;vertical-align:middle")
-                        .append("pre")
-                        .attr("style", "overflow-y:auto;max-height:" + diameter + "px")
-                        .text(JSON.stringify(child, function (key, value) {
-
-                            if (key == "parent") {
-                                return undefined;
-                            }
-
-                            else return value;
-
-
-                        }, 4))
-                ;
-            } catch (ex) {
-                console.log(ex);
-            }
 
         }
 
-    });
-
-    d3.select(self.frameElement).style("height", diameter + "px");
-
-    function zoom(d, i) {
-        var k = r / d.r / 2;
-        x.domain([d.x - d.r, d.x + d.r]);
-        y.domain([d.y - d.r, d.y + d.r]);
-
-        var t = vis.transition()
-                .duration(d3.event.altKey ? 7500 : 750);
-
-        t.selectAll("circle")
-                .attr("cx", function (d) {
-                    return x(d.x);
+        function bubble() {
+            var diameter = 300,
+                format = d3.format(",d");
+            var pack = d3.layout.pack()
+                .size([diameter - 4, diameter - 4])
+                .value(function (d) {
+                    return d.size;
                 })
-                .attr("cy", function (d) {
-                    return y(d.y);
-                })
-                .attr("r", function (d) {
-                    return k * d.r;
+                .sort(function (d) {
+                            return -d.start;
+                        })
+                /*.sort(function comparator(a, b) {
+                    return d3.descending(a.value, b.value);
+                })*/;
+            var i = 0;
+            var json;
+
+            var sortObjectByKey = function (obj) {
+                var keys = [];
+                var sorted_obj = {};
+                for (var key in obj) {
+                    if (obj.hasOwnProperty(key)) {
+                        keys.push(key);
+                    }
+                }
+                // sort keys
+                keys.sort();
+                // create new array based on Sorted Keys
+                jQuery.each(keys, function (i, key) {
+                    sorted_obj[key] = obj[key];
                 });
+                return sorted_obj;
+            };
+            d3.json(myjson, function (error, root) {
+                //sortObjectByKey(root);
+                var array = [];
+                array[0] = root.children[1];
+                array[1] = root.children[0];
+                //array[2] = root.children[2];
+                //root.children = array;
+                json = root;
+                for (var index in root.children) {
+                    //separate each graph
+                    d3.select("body").append("br")
+                        .attr("clear", "both");
+                    //div
+                    var div = d3.select("body").append("div")
+                        .attr("height", diameter);
+                    //svg
+                    var svg = div.append("svg")
+                        .attr("width", diameter)
+                        .attr("height", diameter)
+                        .attr("style", "display:inline-block;vertical-align:middle")
+                        .append("g")
+                        .attr("transform", "translate(2,2)");
+                    var child = root.children[index];
+                    //var child = root;
+                    var node = svg.datum(child).selectAll(".node")
+                        .data(pack.nodes)
+                        .enter().append("g")
+                        .attr("class", function (d) {
+                            return d.children ? "node" : "leaf node";
+                        })
+                        .attr("transform", function (d) {
+                            return "translate(" + d.x + "," + d.y + ")";
+                        });
+                    node.append("title")
+                        .text(function (d) {
+                            //return d.name + (d.children ? "" : ": " + format(d.size));
+                            return d.name + ": " + format(d.size);
+                        });
+                    node.append("circle")
+                        .attr("r", function (d) {
+                            return d.r;
+                        });
+                    node.filter(function (d) {
+                        return !d.children;
+                    }).append("text")
+                        .attr("dy", ".3em")
+                        .style("text-anchor", "middle")
+                        .text(function (d) {
+                            return d.size.substring(0, d.r / 3);
+                        });
+                    //.text(function(d) { return d.name.substring(0, d.r / 3); });
+                    try {
+                        div.append("div")
+                            .attr("style", "display:inline-block;width:50%;vertical-align:middle")
+                            .append("pre")
+                            .attr("style", "overflow-y:auto;max-height:" + diameter + "px")
+                            .text(JSON.stringify(child, function (key, value) {
+                                if (key == "parent") {
+                                    return undefined;
+                                } else return value;
+                            }, 4));
+                    } catch (ex) {
+                        console.log(ex);
+                    }
+                }
+            });
+            d3.select(self.frameElement).style("height", diameter + "px");
 
-        t.selectAll("text")
-                .attr("x", function (d) {
-                    return x(d.x);
-                })
-                .attr("y", function (d) {
-                    return y(d.y);
-                })
-                .style("opacity", function (d) {
-                    return k * d.r > 20 ? 1 : 0;
-                });
-
-        node = d;
-        d3.event.stopPropagation();
-    }
-
-</script>
+        }
+        
+        //bubble();
+        partition();
+        
+    </script>
