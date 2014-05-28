@@ -34,7 +34,7 @@ function isChild {
     debug "${!T} == $THREAD"
     END=END$1
     debug "END : ${!END} >= $((START + TIME)) ?"
-    if [[ "${!L}" == "$LOGIN" ]] && [[ "${!T}" == "$THREAD" ]] && [[ ${!END} -ge $((START + TIME)) ]] #&& [[ $START -ne $(getVar START$LEVEL) ]]
+    if [[ "${!L}" == "$LOGIN" ]] && [[ "${!T}" == "$THREAD" ]] && [[ ${!END} -ge $((START + TIME)) ]]
     then
         RESULT=true
     fi
@@ -63,7 +63,7 @@ function isFirstChild {
 
 function majVar {
     eval $1=$2
-	debug "$1 -> ${!1}"
+	  debug "$1 -> ${!1}"
 }
 
 function getVar {
@@ -71,43 +71,67 @@ function getVar {
 }
 
 function tree {
-    if [[ "$(isChild $LEVEL)" == "true" ]]
+  if [[ "$(isChild $LEVEL)" == "true" ]]
   then
-	if [[ "$(isFirstChild $LEVEL)" == "true" ]]
-	then
-		json ",\"children\":["
-		majVar FIRSTCHILD$LEVEL false
-
-		#init rest of time
-		majVar REST$LEVEL $(getVar TIME$LEVEL)
-	else
-		json ","
-	fi
-	majVar LEVEL $((LEVEL + 1))
+  	if [[ "$(isFirstChild $LEVEL)" == "true" ]]
+  	then
+  		json ",\"children\":["
+  		majVar FIRSTCHILD$LEVEL false
+      
+      #init rest of time
+  		majVar REST$LEVEL $(getVar TIME$LEVEL)
+      
+      #add 'unknown' node
+      LASTSTART=$(getVar START$LEVEL)
+      if [ "$LASTSTART" != "" ] && [ $LASTSTART -ne $START ]
+      then
+        json "{\"name\":\"unknown\",\"size\":\"$((START - LASTSTART))\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$LASTSTART\",\"end\":\"$START\"},"
+        #update rest of time
+        REST=$(getVar REST$LEVEL)
+        majVar REST$LEVEL $((REST - START + LASTSTART))
+      fi
+        
+  	else
+  		json ","
+      
+      #hole in timeline
+      LASTEND=$(getVar END$LEVEL)
+      if [ "$LASTEND" != "" ] && [ $LASTEND -ne $START ]
+      then
+        json "{\"name\":\"unknown\",\"size\":\"$((START - LASTEND))\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$LASTEND\",\"end\":\"$START\"},"
+        #update rest of time
+        REST=$(getVar REST$((LEVEL - 1)))
+        majVar REST$((LEVEL - 1)) $((REST - START + LASTEND))
+      fi
+      
+  	fi
+	  majVar LEVEL $((LEVEL + 1))
   else
     if [[ "$(isFirstChild $LEVEL)" == "true" ]]
-	then
-		json '}'
-	else
+	  then
+		  json '}'
+	  else
 	    #add 'unknown' node
 	    UNKNOWN=$(getVar REST$LEVEL)
+      LASTSTART=$(getVar START$((LEVEL - 1)))
+      LASTEND=$(getVar END$((LEVEL - 1)))
 	    if [ $UNKNOWN -ge 0 ]
 	    then
-	        json ",{\"name\":\"unknown\",\"size\":\"$UNKNOWN\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\"}"
+	        json ",{\"name\":\"unknown\",\"size\":\"$UNKNOWN\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$LASTSTART\",\"end\":\"$LASTEND\"}"
 	    else
 	        debug "UNKNOWN < 0 : $LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
-	        json ",{\"name\":\"unknown\",\"size\":\"0\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\"}"
+	        json ",{\"name\":\"unknown\",\"size\":\"0\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$LASTSTART\",\"end\":\"$LASTEND\"}"
 	    fi
-		json ']}'
-		majVar FIRSTCHILD$LEVEL true
-	fi
-	if [[ "$(isChild $((LEVEL - 1)))" == "true" ]]
-	then
-		json ','
-	else
-		majVar LEVEL $((LEVEL - 1))
-		tree
-	fi
+		  json ']}'
+		  majVar FIRSTCHILD$LEVEL true
+	  fi
+  	if [[ "$(isChild $((LEVEL - 1)))" == "true" ]]
+  	then
+  		json ','
+  	else
+  		majVar LEVEL $((LEVEL - 1))
+  		tree
+  	fi
   fi
 }
 
@@ -129,20 +153,24 @@ sort -t ',' -k 4,4 -k 3,3 -k 5,5 | \
 {
 while IFS=',' read LOG NODE THREAD LOGIN START TIME TAG MSG
 do
-    
+
+    if [[ "$TAG" == ""  ]]
+    then
+        continue
+    fi
+
     THREAD=${THREAD// /}
     THREAD=${THREAD//\'/}
     THREAD=${THREAD//(/}
     THREAD=${THREAD//)/}
-    
     sorted "$LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
-	debug ""
+	  debug ""
     debug "$LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
     debug "LEVEL : $LEVEL"
 
   tree
   
-  json "{\"name\":\"$TAG\",\"size\":\"$TIME\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$START\",\"time\":\"$TIME\""
+  json "{\"name\":\"$TAG\",\"size\":\"$TIME\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$START\",\"time\":\"$TIME\",\"end\":\"$((START + TIME))\""
   
   majVar LOGIN$LEVEL $LOGIN
   majVar THREAD$LEVEL $THREAD
@@ -150,11 +178,11 @@ do
   majVar START$LEVEL $START
   majVar END$LEVEL $(($START + $TIME))
 
-  #maj rest of time
+  #update rest of time
   REST=$(getVar REST$((LEVEL - 1)))
   majVar REST$((LEVEL - 1)) $(($REST - $TIME))
 
-  #count
+  #display count
   COUNT=$(($COUNT + 1))
   printf "%3d %%\r" $(($COUNT * 100 / $NBLIGNES))
 
@@ -166,6 +194,19 @@ json '}'
 #close all
 while [ $LEVEL -ne 1 ]
 do
+    
+    #add 'unknown' node
+    UNKNOWN=$(getVar REST$((LEVEL - 1)))
+    LASTSTART=$(getVar START$((LEVEL - 1)))
+    LASTEND=$(getVar END$((LEVEL - 1)))
+    if [ $UNKNOWN -ge 0 ]
+    then
+        json ",{\"name\":\"unknown\",\"size\":\"$UNKNOWN\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$LASTEND\",\"end\":\"$START\"}"
+    else
+        debug "UNKNOWN < 0 : $LOG $NODE $THREAD $LOGIN $START $TIME $TAG $MSG"
+        json ",{\"name\":\"unknown\",\"size\":\"0\",\"login\":\"$LOGIN\",\"thread\":\"$THREAD\",\"start\":\"$LASTEND\",\"end\":\"$START\"}"
+    fi
+    
     json "]}"
     LEVEL=$(($LEVEL - 1))
 done
@@ -201,3 +242,4 @@ $BODY
 EOF
 )
 done
+
